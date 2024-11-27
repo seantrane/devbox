@@ -1,21 +1,84 @@
 #!/usr/bin/env bash
+#
+# DevBox is a portable virtual development environment supporting Everything-as-Code principles.
+#
+# shellcheck disable=SC2119,SC2120
+
+# Settings to ensure exit on errors.
+# CI/CD, builds, and tests should not proceed if something has gone wrong.
+# - https://gist.github.com/seantrane/2576d590db03bc67c9711abeeafca803
+set -Eeuo pipefail
+# Enable 'expose' (print commands) and 'verbose' option for debugging.
+# set -x
+# set -v
 
 # DEPENDENCIES
-! type "docker" &> /dev/null && echo "!!! Please install docker before running this script !!!" && return 1
+! type "docker" &>/dev/null && echo "!!! Please install docker before running this script !!!" && return 1
 
-# VARS
-__DIR=$( cd "${BASH_SOURCE%/*}" && pwd )
-docker_context_path=$( cd "$__DIR/../src" && pwd )
-docker_image_tag="seantrane/devbox:latest"
-PWD_PATH="$(pwd)"
-WORK_PATH="/workspace"
-# GROUP_ID="$(id -g)"
-# GROUP_NAME="$(id -gn)"
-# USER_ID="$(id -u)"
-# USER_NAME="$(id -un)"
-USER_NAME="dev"
+# GLOBAL VARS
+DEVBOX_REPO_ROOT_PATH=$(cd "${BASH_SOURCE%/*}/.." && pwd)
+DEVBOX_GROUP_ID="$(id -g)"
+DEVBOX_GROUP_NAME="$(id -gn)"
+DEVBOX_USER_ID="$(id -u)"
+DEVBOX_USER_NAME="$(id -un)"
+DEVBOX_IMAGE_NAME="${DEVBOX_USER_NAME}/devbox"
+DEVBOX_IMAGE_TAG="full"
+export \
+  DEVBOX_REPO_ROOT_PATH \
+  DEVBOX_IMAGE_NAME \
+  DEVBOX_IMAGE_TAG \
+  DEVBOX_GROUP_ID \
+  DEVBOX_GROUP_NAME \
+  DEVBOX_USER_ID \
+  DEVBOX_USER_NAME \
+  ;
 
-TZ="$(readlink /etc/localtime | sed 's#/var/db/timezone/zoneinfo/##')"
+#######################################
+# Get the default git branch (from git clone).
+# Globals:
+#   git
+# Arguments:
+#   None
+# Returns:
+#   Default git branch name
+#######################################
+git_default_branch() {
+  (git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@') 2>/dev/null
+}
+
+#######################################
+# Remove "dangling" Docker image(s).
+# Globals:
+#   docker
+# Arguments:
+#   None
+# Returns:
+#   None
+#######################################
+docker_remove_danglers() {
+  # docker rmi -f "$(docker images -f "dangling=true" -q </dev/null 2>/dev/null)" </dev/null 2>/dev/null
+  return
+}
+
+#######################################
+# Remove Docker image.
+# Globals:
+#   docker
+# Arguments:
+#   None
+# Returns:
+#   None
+#######################################
+docker_remove_image() {
+  local _image_tag="${1:-}"
+  shift
+  if [[ -z "$_image_tag" ]]; then
+    echo "ERROR: image tag input is empty: '$_image_tag'" && return 1
+  fi
+  echo "Removing '${DEVBOX_IMAGE_NAME}:$_image_tag' image."
+  docker rmi -f "${DEVBOX_IMAGE_NAME}:$_image_tag" </dev/null 2>/dev/null
+  docker_remove_danglers
+}
 
 #######################################
 # Build Docker image.
@@ -25,30 +88,55 @@ TZ="$(readlink /etc/localtime | sed 's#/var/db/timezone/zoneinfo/##')"
 #   None
 # Returns:
 #   None
+# shellcheck disable=SC2120
 #######################################
-build_docker_image () {
-  if [[ $(docker images "$docker_image_tag" -q) ]]; then
-    docker rmi -f "$docker_image_tag"
+docker_build_image() {
+  local _image_tag="${1:-}"
+  shift
+  if [[ -z "$_image_tag" ]]; then
+    echo "ERROR: image tag input is empty: '$_image_tag'" && return 1
   fi
-
+  local _image_name_tag="${DEVBOX_IMAGE_NAME}:${_image_tag}"
+  local _dockerfile="${DEVBOX_REPO_ROOT_PATH}/config/Dockerfile.${_image_tag}"
+  local _context="${DEVBOX_REPO_ROOT_PATH}/context"
+  if [[ ! -r "$_dockerfile" ]]; then
+    echo "ERROR: Dockerfile not found, or not readable: '$_dockerfile'" && return 1
+  fi
+  if [[ ! -d "$_context" ]]; then
+    echo "ERROR: Docker context directory not found: '$_context'" && return 1
+  fi
+  if [[ -n "$(docker images "$_image_name_tag" -q </dev/null 2>/dev/null)" ]]; then
+    docker_remove_image "$_image_name_tag"
+  fi
+  echo "Building '${DEVBOX_IMAGE_NAME}:$_image_tag' image."
   # Set options for 'docker build' command.
-  options=()
+  OPTS=("$@")
   # Do not use cache when building the image.
-  # options+=(--no-cache)
+  # OPTS+=(--no-cache)
   # Remove intermediate containers after a successful build.
-  options+=(--rm)
+  OPTS+=(--rm)
   # Name of the Dockerfile (Default is 'PATH/Dockerfile').
-  options+=(-f "$docker_context_path/Dockerfile")
+  OPTS+=(-f "$_dockerfile")
   # Name and optionally a tag in the 'name:tag' format.
-  options+=(-t "$docker_image_tag")
+  OPTS+=(-t "$_image_name_tag")
 
-  docker build "${options[@]}" "$docker_context_path"
+  OPTS+=(--build-arg "GROUP_ID=4")
+  OPTS+=(--build-arg "GROUP_NAME=adm")
+  OPTS+=(--build-arg "USER_ID=$DEVBOX_USER_ID")
+  OPTS+=(--build-arg "USER_NAME=$DEVBOX_USER_NAME")
 
-  if [[ $(docker images -f "dangling=true" -q) ]]; then
-    docker rmi -f "$(docker images -f "dangling=true" -q)"
-  fi
+  OPTS+=(--build-arg "BUILD_DATE=$(date --utc +%Y-%m-%dT%XZ)")
+  OPTS+=(--build-arg "VCS_REF=$(git show-ref --hash=7 "$(git_default_branch)" | head -n 1)")
+  OPTS+=(--build-arg "VERSION=$(git describe --tags --abbrev=0 --always --first-parent 2>/dev/null)")
 
-  docker images
+  OPTS+=(--build-arg "DESCRIPTION=$(devbox__description)")
+
+  # echo && echo "docker build ${OPTS[*]} $_context"
+  docker build "${OPTS[@]}" "$_context"
+
+  docker_remove_danglers
+
+  docker images "$_image_name_tag" -q </dev/null 2>/dev/null
 }
 
 #######################################
@@ -60,88 +148,280 @@ build_docker_image () {
 # Returns:
 #   None
 #######################################
-run_docker_container () {
-  if [[ "$(docker images $docker_image_tag -q)" == "" ]]; then
-    build_docker_image
+docker_run_container() {
+  local _image_tag="${1:-}" _homedir
+  shift
+  if [[ -z "$_image_tag" ]]; then
+    echo "ERROR: image tag input is empty: '$_image_tag'" && return 1
+  fi
+  local _image_name_tag="${DEVBOX_IMAGE_NAME}:${_image_tag}"
+  if [[ -z "$(docker images "$_image_name_tag" -q </dev/null 2>/dev/null)" ]]; then
+    docker_build_image "$_image_tag"
   fi
   # Set options for 'docker run' command.
-  options=()
+  local OPTS=()
   # Interactive (Keep STDIN open even if not attached).
-  options+=(-i)
   # Allocate a pseudo-TTY.
-  options+=(-t)
+  [[ -t 0 ]] && OPTS+=(-it)
   # Automatically remove the container when it exits.
-  options+=(--rm)
-
-  # Pass environment variables.
-  options+=(-e "TZ=${TZ:-}")
-  options+=(-e "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}")
-  options+=(-e "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}")
-  options+=(-e "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-}")
-  options+=(-e "GH_TOKEN=${GH_TOKEN:-}")
-  options+=(-e "NPM_TOKEN=${NPM_TOKEN:-}")
-
+  OPTS+=(--rm)
+  # For when container is being run by script.
+  # [[ ! -t 0 ]] && OPTS+=(-q)
   # Mount volume to map current directory (on host) to work directory (on container).
-  options+=(-v "$PWD_PATH:$WORK_PATH")
-  # Mount volume for dotfiles to keep them synced.
-  options+=(-v "$docker_context_path/dotfiles:/home/$USER_NAME/dotfiles")
-  # Mount volumes for read-only credentials/config:
-  # Use host user's SSH keys (read-only).
-  if [[ -e "$HOME/.ssh" ]]; then
-    options+=(-v "$HOME/.ssh:/home/$USER_NAME/.ssh:ro")
-  fi
-  # Use host user's Git config/credentials (read-only).
-  if [[ -e "$HOME/.gitconfig" ]]; then
-    options+=(-v "$HOME/.gitconfig:/home/$USER_NAME/.gitconfig:ro")
-  fi
-  if [[ -e "$HOME/.gitattributes" ]]; then
-    options+=(-v "$HOME/.gitattributes:/home/$USER_NAME/.gitattributes:ro")
-  fi
-  if [[ -e "$HOME/.gitignore" ]]; then
-    options+=(-v "$HOME/.gitignore:/home/$USER_NAME/.gitignore:ro")
-  fi
-  # Use host user's Subversion configuration (read-only).
-  if [[ -e "$HOME/.subversion" ]]; then
-    options+=(-v "$HOME/.subversion:/home/$USER_NAME/.subversion:ro")
-  fi
-  # Use host user's local runtime configuration (read-only).
-  if [[ -e "$HOME/.localrc" ]]; then
-    options+=(-v "$HOME/.localrc:/home/$USER_NAME/.localrc:ro")
-  fi
-  # Use host user's npm runtime configuration (read-only).
-  if [[ -e "$HOME/.npmrc" ]]; then
-    options+=(-v "$HOME/.npmrc:/home/$USER_NAME/.npmrc:ro")
-  fi
-  # Use host user's gem runtime configuration (read-only).
-  if [[ -e "$HOME/.gemrc" ]]; then
-    options+=(-v "$HOME/.gemrc:/home/$USER_NAME/.gemrc:ro")
-  fi
-  # Use host user's Serverless runtime configuration (read-only).
-  if [[ -e "$HOME/.serverlessrc" ]]; then
-    options+=(-v "$HOME/.serverlessrc:/home/$USER_NAME/.serverlessrc:ro")
-  fi
-  # Use host user's MongoDB runtime configuration (read-only).
-  if [[ -e "$HOME/.mongorc.js" ]]; then
-    options+=(-v "$HOME/.mongorc.js:/home/$USER_NAME/.mongorc.js:ro")
-  fi
-  # Mount volumes for persistence:
-  # Allow Serverless config/prefs to be synced on host.
-  if [[ -e "$HOME/.serverless" ]]; then
-    options+=(-v "$HOME/.serverless:/home/$USER_NAME/.serverless")
-  fi
-  # Allow Travis CLI config/prefs to be synced on host.
-  options+=(-v "$HOME/.travis:/home/$USER_NAME/.travis")
-  # Allow Sonar Lint config/prefs to be synced on host.
-  options+=(-v "$HOME/.sonarlint:/home/$USER_NAME/.sonarlint")
-  # Allow AWS-CLI config/prefs to be synced on host.
-  options+=(-v "$HOME/.aws:/home/$USER_NAME/.aws")
-  # Allow Terraform config/prefs to be synced on host.
-  options+=(-v "$HOME/.terraform.d:/home/$USER_NAME/.terraform.d")
-
-  # Container name.
-  # options+=(--name "devbox")
-
-  docker run "${options[@]}" "$docker_image_tag" "$@"
+  OPTS+=(-v "$(pwd):/mnt/pwd")
+  # Set the container timezone to the host user's timezone.
+  TZ="$(readlink /etc/localtime | sed 's#/var/db/timezone/zoneinfo/##')"
+  OPTS+=(-e "TZ=${TZ:-}")
+  # local _homedir="/root"
+  _homedir="/home/$DEVBOX_USER_NAME"
+  OPTS+=(-u "${DEVBOX_USER_ID}:$DEVBOX_GROUP_ID")
+  local _read_only_dotfiles=(
+    ".ssh"
+    ".gitconfig"
+    ".gitattributes"
+    ".gitignore"
+    ".gemrc"
+    ".localrc"
+    ".npmrc"
+    ".mongorc.js"
+    ".serverlessrc"
+  )
+  for _pathname in "${_read_only_dotfiles[@]}"; do
+    if [[ -e "$HOME/${_pathname}" ]]; then
+      # OPTS+=(-v "$HOME/${_pathname}:/root/${_pathname}:ro")
+      OPTS+=(-v "$HOME/${_pathname}:/home/${DEVBOX_USER_NAME}/${_pathname}:ro")
+    fi
+  done
+  local _synced_dotfiles=(
+    ".aws"
+    ".serverless"
+    ".travis"
+    ".sonarlint"
+    ".terraform.d"
+  )
+  for _pathname in "${_synced_dotfiles[@]}"; do
+    if [[ -e "$HOME/${_pathname}" ]]; then
+      # OPTS+=(-v "$HOME/${_pathname}:/root/${_pathname}")
+      OPTS+=(-v "$HOME/${_pathname}:/home/${DEVBOX_USER_NAME}/${_pathname}")
+    fi
+  done
+  local _env_vars=(
+    "AWS_PROFILE"
+    "AWS_DEFAULT_REGION"
+    "AWS_ACCESS_KEY_ID"
+    "AWS_SECRET_ACCESS_KEY"
+    "AWS_SESSION_TOKEN"
+    "GH_TOKEN"
+    "NPM_TOKEN"
+  )
+  for _var in "${_env_vars[@]}"; do
+    if [[ -n "${!_var:-}" ]]; then
+      OPTS+=(-e "$_var=${!_var:-}")
+    fi
+  done
+  # Set container name.
+  OPTS+=(--name "${PWD##*/}-devbox-${_image_tag}")
+  # Uncomment to debug the final command.
+  # echo && echo "docker run ${OPTS[*]} ${_image_name_tag} ${*}"
+  docker run "${OPTS[@]}" "$_image_name_tag" "$@"
 }
 
-run_docker_container "$@"
+devbox__description() {
+  echo "DevBox is a portable virtual development environment supporting Everything-as-Code principles."
+}
+
+devbox__help() {
+  echo "
+  devbox
+
+    $(devbox__description)
+
+  Globals:
+
+    docker
+
+  Usage:
+
+    devbox [command][-image]                                  (launch Bash session in container)
+
+    devbox [command][-image] [bin-command] [arguments]        (execute binary command inside container)
+
+    devbox [command][-image] [alias/function] [arguments]     (execute shell alias/function inside container)
+
+    devbox [docker-command][-image] [docker-command-options]  (docker command proxy)
+
+  Options:
+
+    -h, --help
+        Display help message and exit.
+
+  Arguments:
+
+    [1] [command][-image] is a dash-separated compound argument with 2 segments.
+        Only [command] is required. Dash is only required with [image] segment.
+        The 'Command' argument segment is meant to proxy Docker commands.
+        - DevBox commands: remove, build, run, rerun, rebuild, upgrade.
+        - Docker commands also work, with no need for trailing image-argument.
+        The 'Image' argument segment is optional (default: 'full'), represents
+        the extension of Dockerfile to use for build, e.g.; Dockerfile.full.
+        - Image options: base, iac, full
+
+    [*] All additional arguments are passed into the container.
+        Bash prompt is provided when no arguments are passed.
+
+  Returns:
+
+    None
+
+  Examples of (devbox [command][-image]):
+
+    devbox remove               = devbox remove-full
+    devbox build                = devbox build-full
+    devbox rebuild              = devbox rebuild-full
+    devbox run                  = devbox run-full
+    devbox rerun                = devbox rerun-full
+    devbox inspect              = devbox inspect:full
+
+    devbox [docker-command]     = devbox [docker-command]-full
+
+    devbox remove-base
+    devbox build-base
+    devbox rebuild-base
+    devbox run-base
+    devbox rerun-base
+    devbox inspect-base
+
+  Examples of (devbox [command][-image] [bin-command] [arguments]):
+
+    devbox run tree -aC --gitignore
+    devbox run apt search vim
+
+  Examples of (devbox [command][-image] [alias/function] [arguments]):
+
+    devbox run la /
+    devbox run ip opensource.org
+
+  Examples of (devbox [docker-command][-image] [docker-command-options]):
+
+    devbox inspect              = devbox inspect-full
+    devbox inspect-base
+  "
+}
+
+################################################################################
+# DevBox is a portable virtual development environment supporting Everything-as-Code principles.
+# Globals:
+#   docker
+# Usage:
+#   devbox [command][-image]                                  (launch Bash session in container)
+#   devbox [command][-image] [bin-command] [arguments]        (execute binary command inside container)
+#   devbox [command][-image] [alias/function] [arguments]     (execute shell alias/function inside container)
+#   devbox [docker-command][-image] [docker-command-options]  (docker command proxy)
+# Options:
+#   -h, --help
+#       Display help message and exit.
+# Arguments:
+#   [1] [command[-image] is a dash-separated compound argument with 2 segments.
+#       Only [command] is required. Dash is only required with [image] segment.
+#       The 'Command' argument segment is meant to proxy Docker commands.
+#       - DevBox commands: remove, build, run, rerun, rebuild, upgrade.
+#       - Docker commands also work, with no need for trailing image-argument.
+#       The 'Image' argument segment is optional (default: 'full'), represents
+#       the extension of Dockerfile to use for build, e.g.; Dockerfile.full.
+#       - Image options: base, iac, full
+#   [*] All additional arguments are passed into the container.
+#       Bash prompt is provided when no arguments are passed.
+# Returns:
+#   None
+################################################################################
+devbox() {
+  local _cmd="${1:-}" _image_tag="$DEVBOX_IMAGE_TAG"
+  shift
+  # Loop through function options and arguments.
+  case "$_cmd" in
+  --help | -h)
+    devbox__help && return
+    ;;
+  --info)
+    devbox__description && return
+    ;;
+  bootstrap)
+    {
+      local _bin_dir="/usr/local/bin"
+      if [[ ! -d "$_bin_dir" ]] || [[ ! -w "$_bin_dir" ]]; then
+        if [[ -d "/usr/bin" ]] && [[ -w "/usr/bin" ]]; then
+          _bin_dir="/usr/bin"
+        elif [[ -d "/bin" ]] && [[ -w "/bin" ]]; then
+          _bin_dir="/bin"
+        fi
+      fi
+      if [[ -d "$_bin_dir" ]] && [[ -w "$_bin_dir" ]]; then
+        ln -sf "${DEVBOX_REPO_ROOT_PATH}/bin/devbox" "$_bin_dir/devbox"
+      else
+        local _devbox_path_export="export PATH=\"${DEVBOX_REPO_ROOT_PATH}/bin:\$PATH\""
+        echo "$_devbox_path_export" >>~/.aliases
+        echo "$_devbox_path_export" >>~/.bash_aliases
+      fi
+    } && echo "devbox successfully bootstrapped!"
+    ;;
+  build*)
+    if [[ "$_cmd" == "build-"* ]]; then _image_tag="${_cmd#*-}"; fi
+    docker_build_image "$_image_tag"
+    ;;
+  rebuild*)
+    if [[ "$_cmd" == "rebuild-"* ]]; then _image_tag="${_cmd#*-}"; fi
+    docker_remove_image "$_image_tag"
+    docker_build_image "$_image_tag"
+    ;;
+  remove*)
+    if [[ "$_cmd" == "remove-"* ]]; then _image_tag="${_cmd#*-}"; fi
+    docker_remove_image "$_image_tag"
+    ;;
+  rerun*)
+    if [[ "$_cmd" == "rerun-"* ]]; then _image_tag="${_cmd#*-}"; fi
+    docker_remove_image "$_image_tag"
+    docker_run_container "$_image_tag" "$@"
+    ;;
+  run*)
+    if [[ "$_cmd" == "run-"* ]]; then _image_tag="${_cmd#*-}"; fi
+    docker_run_container "$_image_tag" "$@"
+    ;;
+  upgrade | update)
+    (
+      cd "$DEVBOX_REPO_ROOT_PATH"
+      _active_branch="$(git rev-parse --abbrev-ref HEAD)"
+      _origin_branch="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@' 2>/dev/null)"
+      if [[ "$_active_branch" == "$_origin_branch" ]] && [[ -n "$(git diff "origin/$_origin_branch")" ]]; then
+        _git_changes="$(git status --porcelain)"
+        type "awk" &>/dev/null && _git_changes="$(git status --porcelain | awk 'match($1, "[D,M]"){print $2}' 2>/dev/null)"
+        if [[ -n "$_git_changes" ]]; then
+          _git_stash_name="changes-$(date --utc +%Y%m%dT%H%M%SZ)"
+          git add -A .
+          git stash "$_git_stash_name"
+          echo "[ALERT] Changes have been added to Git Stash: '$_git_stash_name'"
+          echo "[INFO] You may re-apply stashed changes after upgrade is complete."
+        fi
+        git pull
+        echo "[SUCCESS] Latest changes pulled. Please 'devbox rebuild' images, or 'devbox rerun' containers, to apply."
+      else
+        echo "[ALERT] You are not using the default branch. Changes may only be pulled from the default branch."
+        echo "[INFO] Please stash or commit your changes and switch to the default branch before attempting 'devbox upgrade'."
+      fi
+    )
+    ;;
+  *)
+    if [[ "$_cmd" == *"-"* ]]; then
+      _image_tag="${_cmd#*-}"
+      _cmd="${_cmd%-*}"
+    fi
+    if [[ "$(docker "$_cmd" 2>&1 >/dev/null)" != *"not a docker command"* ]]; then
+      docker "$_cmd" "$@" "${DEVBOX_IMAGE_NAME}:$_image_tag"
+    else
+      echo "[ERROR] Unknown command: '$_cmd'" && echo
+      devbox__help && return 1
+    fi
+    ;;
+  esac
+}
+
+devbox "$@"

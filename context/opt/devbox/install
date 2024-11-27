@@ -1,0 +1,787 @@
+#!/usr/bin/env bash
+#
+# Initialize Docker image.
+#   1. Create non-root user/group.
+#   2. Install dependencies.
+#
+# shellcheck disable=SC2005,SC2015,SC1090,SC2120
+# spell-checker: disable
+
+# Settings to ensure exit on errors.
+# CI/CD, builds, and tests should not proceed if something has gone wrong.
+# - https://gist.github.com/seantrane/2576d590db03bc67c9711abeeafca803
+set -Eeuxo pipefail
+# Enable 'verbose' option for debugging.
+# set -v
+
+DEVBOX_IS_ARM_ARCH=false
+if [[ "${UMACH:-${MACHTYPE:-$(uname -m 2>/dev/null)}}" == *"arm"* ]] || [[ "${TARGETPLATFORM:-}" == *"arm"* ]] || [[ "${TARGETPLATFORM:-}" == *"aarch64"* ]]; then
+  DEVBOX_IS_ARM_ARCH=true
+fi
+
+#-------------------------------------------------------------------------------
+# Shared functions
+#-------------------------------------------------------------------------------
+
+# Retry a failing command up to 5 times before continuing with failure.
+retry_command() {
+  for i in {1..5}; do
+    if "$@"; then
+      break
+    else
+      sleep 15
+      # shellcheck disable=SC2015
+      if ((i < 5)); then echo "...attempt #${i}..."; fi
+    fi
+  done
+}
+
+# Handler for routine package manager commands.
+pm_handler() {
+  local _cmd=("${1:-}")
+  case "${1:-}" in
+  apt)
+    # WARNING: apt does not have a stable CLI interface. Use with caution in scripts.
+    _cmd=("apt-get")
+    ;;
+  esac
+  shift
+  _cmd+=("${1:-}")
+  if [[ "${1:-}" == "install" ]]; then
+    [[ "${_cmd[*]}" == "apt"* ]] && _cmd+=(--no-install-recommends --no-install-suggests -yq)
+    [[ "${_cmd[*]}" == "npm"* ]] && _cmd+=(-g --unsafe)
+  fi
+  shift
+  retry_command "${_cmd[@]}" "$@"
+}
+
+#-------------------------------------------------------------------------------
+# Core dependencies
+#-------------------------------------------------------------------------------
+
+# Install build dependencies required by Linux to build/compile binaries.
+install_build_deps() {
+  echo "Installing build dependencies."
+  pm_handler apt install \
+    apt-utils \
+    build-essential \
+    cmake \
+    curl \
+    gcc \
+    gnupg \
+    sudo \
+    unzip \
+    wget \
+    ;
+}
+
+# - https://packages.ubuntu.com
+install_core_deps() {
+  echo "Installing core dependencies."
+  pm_handler apt install \
+    ca-certificates \
+    git \
+    git-lfs \
+    jq \
+    lsb-release \
+    vim \
+    zip \
+    ;
+  pm_handler apt install \
+    bc \
+    docker.io \
+    graphviz \
+    hub \
+    libsodium-dev \
+    ncurses-base \
+    openssh-client \
+    openssl \
+    ;
+}
+
+# Install shell enhancements and common shell dependencies.
+install_shell_deps() {
+  echo "Installing shell dependencies."
+  pm_handler apt install \
+    ack \
+    bash \
+    bash-completion \
+    bash-doc \
+    dnsutils \
+    grc \
+    jq \
+    less \
+    shellcheck \
+    tree \
+    ;
+  pm_handler apt install \
+    binutils-dev \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libelf-dev \
+    libstdc++-12-dev \
+    zlib1g-dev \
+    libdw-dev \
+    libiberty-dev \
+    ;
+  echo "Set Bash as default shell."
+  sed -i -e "s/bin\/sh/bin\/bash/" /etc/passwd
+  cat "/etc/passwd"
+  command -v bash
+  bash --version
+}
+
+#-------------------------------------------------------------------------------
+# Language dependencies
+#-------------------------------------------------------------------------------
+
+# An open-source programming language supported by Google.
+# - https://go.dev
+install_go() {
+  # Get/set version.
+  local _version="${1:-${GO_VERSION:-1.23.3}}"
+  # Get/set architecture.
+  local _arch="linux-amd64"
+  if ($DEVBOX_IS_ARM_ARCH); then
+    _arch="linux-arm64"
+  fi
+  # Get/install dependencies with retries on failure.
+  echo "Installing Go v${1:-${GO_VERSION:-"-latest"}} (${_arch})."
+  curl -OsL "https://go.dev/dl/go${_version}.${_arch}.tar.gz"
+  rm -rf /usr/local/go
+  tar -C "/usr/local" --strip-components=1 -xzf "go${_version}.${_arch}.tar.gz"
+  rm -f "go${_version}.${_arch}.tar.gz"
+  export PATH="$PATH:/usr/local/go/bin"
+  command -v go
+  go version
+  # Install Go-dependennt tools.
+  # shfmt (https://github.com/mvdan/sh)
+  # - https://pkg.go.dev/mvdan.cc/sh/v3
+  go install mvdan.cc/sh/v3/cmd/shfmt@latest
+}
+
+# Node.js® is a free, open-source, cross-platform JavaScript runtime environment
+# that lets developers create servers, web apps, command line tools and scripts.
+# - https://nodejs.org
+install_node() {
+  echo "Installing Node.js, npm."
+  curl -sL "https://deb.nodesource.com/setup_${1:-${NODE_VERSION:-22}}.x" | sudo -E bash -
+  pm_handler apt install \
+    nodejs \
+    ;
+  command -v node
+  node --version
+  command -v npm
+  npm --version
+}
+
+# Python is a programming language that lets you work more quickly and integrate
+# your systems more effectively.
+# - https://www.python.org
+install_python() {
+  echo "Installing Python, pip."
+  pm_handler apt install \
+    libkrb5-dev \
+    libxml2-dev \
+    libxslt1-dev \
+    python3-dev \
+    python3-pip \
+    python3-setuptools \
+    python3-wheel \
+    zlib1g-dev \
+    ;
+  echo "Installing Python utilities."
+  # https://pypi.org/search/
+  # shellcheck disable=SC2034
+  # SODIUM_INSTALL=system
+  pip3 install --no-cache-dir --upgrade pip
+  if [[ -r "/opt/devbox/etc/pip/requirements.txt" ]]; then
+    pip3 install --no-cache-dir -r /opt/devbox/etc/pip/requirements.txt
+  fi
+  ln -s /bin/python3 /usr/local/bin/python
+}
+
+# Ruby is a dynamic, open source programming language with a focus on simplicity
+# and productivity.
+# - https://www.ruby-lang.org
+install_ruby() {
+  echo "Installing Ruby."
+  pm_handler apt install \
+    ruby-full \
+    ;
+  echo "Installing Ruby gems; Bundler, Jekyll."
+  pm_handler gem install \
+    bundler \
+    jekyll \
+    ;
+  gem list
+}
+
+#-------------------------------------------------------------------------------
+# IaC dependencies
+#-------------------------------------------------------------------------------
+
+# AWS Command Line Interface
+# - https://aws.amazon.com/cli/
+install_aws() {
+  # Get/set version.
+  local _version="${1:-${AWS_VERSION:-}}"
+  [[ "$_version" == "latest" ]] && _version=""
+  [[ -n "$_version" ]] && _version="-$_version"
+  # Get/set architecture.
+  local _arch="x86_64"
+  if ($DEVBOX_IS_ARM_ARCH); then
+    _arch="aarch64"
+  fi
+  # Get/install dependencies with retries on failure.
+  echo "Installing AWS-CLI v${1:-${AWS_VERSION:-"-latest"}} (${_arch})."
+  retry_command curl -LsS "https://awscli.amazonaws.com/awscli-exe-linux-${_arch}${_version}.zip" -o /tmp/awscli.zip
+  mkdir -p /usr/local/awscli
+  unzip -q /tmp/awscli.zip -d /usr/local/awscli
+  rm -f /tmp/awscli.zip
+  /usr/local/awscli/aws/install
+  # Validate install.
+  command -v aws
+  aws --version
+}
+
+# Cloudflare - Create a locally-managed tunnel (CLI).
+# - https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/create-local-tunnel/
+install_cloudflared() {
+  # Add Cloudflare's package signing key.
+  sudo mkdir -p --mode=0755 /usr/share/keyrings
+  curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+  # Add Cloudflare's apt repo to your apt repositories
+  echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+  # Update repositories and install cloudflared
+  sudo apt-get update
+  sudo apt-get install cloudflared
+}
+
+# Google Cloud Command Line Interface (gcloud CLI)
+# - https://cloud.google.com/cli
+install_gcp() {
+  # Get/set version.
+  local _version="${1:-${GCP_VERSION:-"499.0.0"}}"
+  # Get/set architecture.
+  local _arch="x86_64"
+  if ($DEVBOX_IS_ARM_ARCH); then
+    _arch="arm"
+  fi
+  # Get/install dependencies with retries on failure.
+  echo "Installing GCP SDK v${_version} (${_arch})."
+  retry_command curl -LsS "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-${_version}-linux-${_arch}.tar.gz" -o google-cloud-sdk.tar.gz
+  tar -xf google-cloud-sdk.tar.gz
+  rm -f google-cloud-sdk.tar.gz
+  ./google-cloud-sdk/install.sh \
+    --usage-reporting false \
+    --command-completion true \
+    --path-update true \
+    --quiet
+  /google-cloud-sdk/bin/gcloud config set component_manager/disable_update_check true
+  /google-cloud-sdk/bin/gcloud config set metrics/environment github_docker_image
+  # {
+  #   echo -e "\n# Add Google Cloud SDK"
+  #   echo "source /google-cloud-sdk/path.bash.inc"
+  #   echo "source /google-cloud-sdk/completion.bash.inc"
+  # } >>/etc/bash.bashrc
+  # PATH="$PATH:/google-cloud-sdk/bin"
+  # Validate install.
+  /google-cloud-sdk/bin/gcloud --version
+}
+
+# A command line editor for HCL.
+# - https://github.com/minamijoyo/hcledit
+install_hcledit() {
+  # Get/set architecture.
+  local _arch="amd64" _url=""
+  if ($DEVBOX_IS_ARM_ARCH); then
+    _arch="arm64"
+  fi
+  # Get/install dependencies with retries on failure.
+  echo "Installing hcledit (${_arch})."
+  _url="$(curl -LsS https://api.github.com/repos/minamijoyo/hcledit/releases/latest | grep -o -E "https://.+?_linux_${_arch}.tar.gz")"
+  [[ -n "$_url" ]] && retry_command curl -LsS "${_url}" -o ./hcledit.tar.gz
+  tar -xf ./hcledit.tar.gz
+  rm -f ./hcledit.tar.gz
+  chmod +x ./hcledit
+  chown "$(id -u):$(id -g)" ./hcledit
+  mv ./hcledit /usr/bin/hcledit
+  # Validate install.
+  command -v hcledit
+  hcledit version
+}
+
+# OpenTofu is a fork of Terraform that is open-source, community-driven, and
+# managed by the Linux Foundation.
+# - https://opentofu.org
+install_opentofu() {
+  # Get/set version.
+  local _version="${1:-${OPENTOFU_VERSION:-"latest"}}"
+  [[ "$_version" == "latest" ]] &&
+    _version="$(curl -LsS https://api.github.com/repos/opentofu/opentofu/releases/latest | jq -r .tag_name | sed 's/^v//')"
+  # Get/set architecture.
+  local _arch="amd64"
+  if ($DEVBOX_IS_ARM_ARCH); then
+    _arch="arm64"
+  fi
+  # Get/install dependencies with retries on failure.
+  echo "Installing OpenTofu v${_version} (${_arch})."
+  retry_command curl -LsS "https://github.com/opentofu/opentofu/releases/download/v${_version}/tofu_${_version}_${_arch}.deb" -o ./tofu.deb
+  dpkg -i ./tofu.deb
+  rm -f ./tofu.deb
+  # Validate install.
+  command -v tofu
+  tofu --version
+}
+
+# Infrastructure automation to provision and manage resources in any cloud or
+# data center.
+# - https://www.terraform.io
+install_terraform() {
+  # Get/set version.
+  local _version="${1:-${TERRAFORM_VERSION:-"latest"}}"
+  [[ "$_version" == "latest" ]] &&
+    _version="$(curl -LsS https://releases.hashicorp.com/terraform/ | grep -Eo '/[.0-9]+/' | grep -Eo '[.0-9]+' | sort -V | tail -1)"
+  # Get/set architecture.
+  local _arch="amd64"
+  if ($DEVBOX_IS_ARM_ARCH); then
+    _arch="arm64"
+  fi
+  # Get/install dependencies with retries on failure.
+  echo "Installing Terraform v${_version} (${_arch})."
+  retry_command curl -LsS "https://releases.hashicorp.com/terraform/${_version}/terraform_${_version}_linux_${_arch}.zip" -o ./terraform.zip
+  unzip ./terraform.zip
+  rm -f ./terraform.zip
+  chmod +x ./terraform
+  mv ./terraform /usr/bin/terraform
+  # Validate install.
+  command -v terraform
+  terraform --version
+}
+
+# DRY and maintainable OpenTofu/Terraform code. Terragrunt is a flexible
+# orchestration tool that allows Infrastructure as Code to scale.
+# - https://terragrunt.gruntwork.io
+install_terragrunt() {
+  # Get/set version.
+  local _version="${1:-${TERRAGRUNT_VERSION:-"latest"}}"
+  if [[ "$_version" == "latest" ]]; then
+    _version="$(curl -LsS https://api.github.com/repos/gruntwork-io/terragrunt/releases/latest | jq -r .name)"
+  else
+    _version="v$_version"
+  fi
+  # Get/set architecture.
+  local _arch="amd64"
+  if ($DEVBOX_IS_ARM_ARCH); then
+    _arch="arm64"
+  fi
+  # Get/install dependencies with retries on failure.
+  echo "Installing Terragrunt v${_version} (${_arch})."
+  retry_command curl -LsS "https://github.com/gruntwork-io/terragrunt/releases/download/${_version}/terragrunt_linux_${_arch}" -o /usr/bin/terragrunt
+  chmod +x /usr/bin/terragrunt
+  # Validate install.
+  command -v terragrunt
+  terragrunt --version
+}
+
+# TFLint - A Pluggable Terraform Linter.
+# - https://github.com/terraform-linters/tflint
+install_tflint() {
+  # Get/set architecture.
+  local _arch="amd64" _url=""
+  if ($DEVBOX_IS_ARM_ARCH); then
+    _arch="arm64"
+  fi
+  # Get/install dependencies with retries on failure.
+  echo "Installing TFLint (${_arch})."
+  _url="$(curl -LsS https://api.github.com/repos/terraform-linters/tflint/releases/latest | grep -o -E "https://.+?_linux_${_arch}.zip")"
+  [[ -n "$_url" ]] && retry_command curl -LsS "${_url}" -o ./tflint.zip
+  unzip ./tflint.zip
+  rm -f ./tflint.zip
+  chmod +x ./tflint
+  mv ./tflint /usr/bin/tflint
+  # Validate install.
+  command -v tflint
+  tflint --version
+}
+
+# SOPS is an editor of encrypted files that supports YAML, JSON, ENV, INI and
+# BINARY formats and encrypts with AWS KMS, GCP KMS, Azure Key Vault, age, and
+# PGP.
+# - https://github.com/getsops/sops
+install_sops() {
+  # Get/set architecture.
+  local _arch="amd64" _url=""
+  if ($DEVBOX_IS_ARM_ARCH); then
+    _arch="arm64"
+  fi
+  # Get/install dependencies with retries on failure.
+  echo "Installing SOPS: Secrets OPerationS (${_arch})."
+  _url="$(curl -LsS https://api.github.com/repos/getsops/sops/releases/latest | grep -o -E "https://.+?\.linux.${_arch}" | head -1)"
+  [[ -n "$_url" ]] && retry_command curl -LsS "${_url}" -o /usr/bin/sops
+  chmod +x /usr/bin/sops
+  # Validate install.
+  command -v sops
+  sops --version
+}
+
+#-------------------------------------------------------------------------------
+# Programming/coding dependencies
+#-------------------------------------------------------------------------------
+
+# Install code coverage dependencies.
+install_coverage() {
+  # - https://github.com/SimonKagstrom/kcov/blob/master/INSTALL.md
+  echo "Installing kcov, for shell/python script unit testing."
+  if [[ ! -d "/opt/kcov" ]]; then
+    git clone "https://github.com/SimonKagstrom/kcov" /opt/kcov
+    (
+      mkdir /opt/kcov/build
+      cd /opt/kcov/build
+      cmake ..
+      make
+      make install
+    )
+  fi
+  if [[ ! -d "/usr/local/lib/bats-core" ]]; then
+    echo "Installing Bats-core, for shell script unit testing."
+    git clone "https://github.com/bats-core/bats-core.git" /tmp/bats-core
+    /tmp/bats-core/install.sh /usr/local
+    rm -rf /tmp/bats-core
+  fi
+  if [[ ! -d "/opt/lcov" ]]; then
+    # - https://github.com/linux-test-project/lcov
+    echo "Installing lcov, used for most code coverage reporting."
+    _lcov_version="$(curl --silent "https://api.github.com/repos/linux-test-project/lcov/releases/latest" | jq -r .tag_name)"
+    retry_command curl -LsS "https://github.com/linux-test-project/lcov/releases/download/${_lcov_version}/lcov-${_lcov_version#v}.tar.gz" -o /tmp/lcov.tar.gz
+    mkdir -p /tmp/lcov
+    tar -xvzf /tmp/lcov.tar.gz -C /tmp/lcov
+    mkdir -p /opt/lcov
+    cp -af "/tmp/lcov/lcov-${_lcov_version#v}/"* /opt/lcov
+    ls -lahF /opt/lcov
+    rm -f /tmp/lcov.tar.gz
+    (
+      cd /opt/lcov
+      make PREFIX=/opt/lcov install
+    )
+  fi
+}
+
+# npm is the package manager for Node.js.
+# - https://www.npmjs.com
+install_npm_deps() {
+  echo "Installing npm global dependencies."
+  pm_handler npm install \
+    @angular/cli \
+    @commitlint/cli \
+    @commitlint/config-conventional \
+    commitizen \
+    commitlint-config-awesome \
+    cucumber \
+    cz-conventional-changelog \
+    generator-repo \
+    markdownlint-cli \
+    nx \
+    puppeteer \
+    semver \
+    serverless \
+    sonarlint \
+    typescript \
+    yo \
+    ;
+  npm cache clean -g -f </dev/null 2>/dev/null || true
+  npm list -g --depth=0 </dev/null 2>/dev/null || true
+}
+
+# GitHub CLI (https://cli.github.com)
+# - https://github.com/cli/cli/blob/trunk/docs/install_linux.md
+install_gh() {
+  (type -p wget >/dev/null || (sudo apt update && sudo apt-get install wget --no-install-recommends --no-install-suggests -yq)) &&
+    sudo mkdir -p -m 755 /etc/apt/keyrings &&
+    wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null &&
+    sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg &&
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null &&
+    sudo apt update &&
+    sudo apt install gh --no-install-recommends --no-install-suggests -yq
+}
+
+# - https://googlechromelabs.github.io/chrome-for-testing/
+install_google_chrome() {
+  # Get/set version.
+  local _release="${CHROME_RELEASE:-117}"
+  local _version="=${CHROMEDRIVER_VERSION:-117.0.5938.149}" _cft_version=""
+  # Get/set architecture.
+  local _arch="linux64"
+  if ($DEVBOX_IS_ARM_ARCH); then
+    _arch="mac-arm64"
+  fi
+  # Get/install dependencies with retries on failure.
+  echo "Installing Google Chrome dependencies."
+  pm_handler apt install \
+    ca-certificates \
+    fonts-liberation \
+    gnupg \
+    wget \
+    ;
+  pm_handler apt install \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libc6 \
+    libcairo2 \
+    libcups2 \
+    libcurl3-gnutls \
+    libdrm2 \
+    libexpat1 \
+    libgbm1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libu2f-udev \
+    libvulkan1 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xdg-utils \
+    ;
+  echo "Finding latest release-version for Google Chrome v${_release}"
+  _cft_version="$(curl -o - "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${_release}")"
+  if [[ -n "$_cft_version" ]]; then
+    _version="$_cft_version"
+  fi
+  echo "Installing Google Chrome ${_version}"
+  retry_command curl -LO "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${_version}/${_arch}/chrome-${_arch}.zip"
+  unzip "chrome-${_arch}.zip" -d /opt
+  rm -f "chrome-${_arch}.zip"
+  ln -s "/opt/chrome-${_arch}/chrome" /usr/bin/chrome
+  echo "Installing Google ChromeDriver ${_version}"
+  retry_command curl -LO "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${_version}/${_arch}/chromedriver-${_arch}.zip"
+  unzip "chromedriver-${_arch}.zip" -d /opt/selenium
+  rm -f "chromedriver-${_arch}.zip"
+  ln -s "/opt/selenium/chromedriver-${_arch}/chromedriver" /usr/bin/chromedriver
+  echo "Making files owned by root and executable."
+  for i in /usr/bin/chrome "/opt/chrome-${_arch}" /usr/bin/chromedriver "/opt/selenium/chromedriver-${_arch}"; do
+    if [[ -e "$i" ]]; then
+      chmod a+x "$i"
+      chown root:root "$i"
+    fi
+  done
+}
+
+#-------------------------------------------------------------------------------
+# Security tools and dependencies
+#-------------------------------------------------------------------------------
+
+# Cloud Security Suite - One stop tool for auditing the security posture of
+# AWS/GCP/Azure infrastructure.
+# - https://github.com/SecurityFTW/cs-suite
+install_cssuite() {
+  echo "Install Cloud Security Suite (cs-suite) [https://github.com/SecurityFTW/cs-suite]."
+  mkdir -p "${CSSUITE_HOME:-/usr/local/src/cs-suite}"
+  git clone https://github.com/SecurityFTW/cs-suite.git "${CSSUITE_HOME:-/usr/local/src/cs-suite}"
+  {
+    cd "${CSSUITE_HOME:-/usr/local/src/cs-suite}"
+    virtualenv -p python2.7 venv
+    # shellcheck disable=SC1091
+    source venv/bin/activate
+    pip install -r requirements.txt
+    python cs.py --help
+    touch /usr/local/bin/cssuite
+    chmod +x /usr/local/bin/cssuite
+    echo -e "#!/usr/bin/env bash\n\n(\n  cd \"${CSSUITE_HOME:-/usr/local/src/cs-suite}\"\n  python cs.py \"\$@\"\n)\n" >/usr/local/bin/cssuite
+  }
+}
+
+# OWASP DependencyCheck
+# - https://owasp.org/www-project-dependency-check/
+# - https://github.com/jeremylong/DependencyCheck
+install_dependencycheck() {
+  local _version
+  _version=$(curl -s https://jeremylong.github.io/DependencyCheck/current.txt)
+  curl -Ls "https://github.com/jeremylong/DependencyCheck/releases/download/v$_version/dependency-check-$_version-release.zip" --output /tmp/dependency-check.zip
+  unzip /tmp/dependency-check.zip -d /opt/
+  rm /tmp/dependency-check.zip
+  mkdir /opt/dependency-check/data
+  chown -Rf root:staff /opt/dependency-check
+  chmod -Rf 775 /opt/dependency-check
+}
+
+#-------------------------------------------------------------------------------
+# INSTALLER CLI
+#-------------------------------------------------------------------------------
+
+main() {
+  local __install_build_deps=false \
+    __install_aws=false \
+    __install_cloudflared=false \
+    __install_core_deps=false \
+    __install_gcp=false \
+    __install_gh=false \
+    __install_go=false \
+    __install_google_chrome=false \
+    __install_hcledit=false \
+    __install_node=false \
+    __install_npm=false \
+    __install_opentofu=false \
+    __install_python=false \
+    __install_ruby=false \
+    __install_sdkman=false \
+    __install_security=false \
+    __install_shell_deps=false \
+    __install_sops=false \
+    __install_terraform=false \
+    __install_terragrunt=false \
+    __install_tflint=false
+
+  # Loop through function options and arguments.
+  while [[ $# -gt 0 ]]; do
+    _key="${1:-}"
+    case "$_key" in
+    --aws)
+      __install_aws=true
+      __install_python=true
+      ;;
+    --build)
+      __install_build_deps=true
+      ;;
+    --core)
+      __install_core_deps=true
+      ;;
+    --dev)
+      __install_coverage=true
+      __install_gh=true
+      __install_go=true
+      __install_node=true
+      __install_npm=true
+      __install_python=true
+      __install_ruby=true
+      ;;
+    --gcp)
+      __install_gcp=true
+      ;;
+    --gh | --github)
+      __install_gh=true
+      ;;
+    --go)
+      __install_go=true
+      ;;
+    --google-chrome)
+      __install_build_deps=true
+      __install_google_chrome=true
+      ;;
+    --iac)
+      __install_aws=true
+      __install_cloudflared=true
+      __install_gcp=true
+      __install_go=true
+      __install_hcledit=true
+      __install_opentofu=true
+      __install_python=true
+      __install_sops=true
+      __install_terraform=true
+      __install_terragrunt=true
+      __install_tflint=true
+      ;;
+    --java)
+      __install_java=true
+      # if [[ "${2:-}" != "-"* ]]; then
+      #   JAVA_VERSION="${2:-}"
+      #   shift
+      # fi
+      ;;
+    --node)
+      __install_node=true
+      # if [[ "${2:-}" != "-"* ]]; then
+      #   NODE_VERSION="${2:-}"
+      #   shift
+      # fi
+      ;;
+    --npm)
+      __install_npm=true
+      ;;
+    --opentofu)
+      __install_opentofu=true
+      __install_tflint=true
+      ;;
+    --python)
+      __install_python=true
+      ;;
+    --ruby)
+      __install_ruby=true
+      ;;
+    --security)
+      __install_security=true
+      ;;
+    --shell)
+      __install_shell_deps=true
+      ;;
+    --terraform)
+      __install_terraform=true
+      __install_tflint=true
+      ;;
+    --terragrunt)
+      __install_hcledit=true
+      __install_terragrunt=true
+      ;;
+    *) ;;
+    esac
+    shift
+  done
+
+  pm_handler apt update
+
+  if ($__install_build_deps); then install_build_deps; fi
+  if ($__install_core_deps); then install_core_deps; fi
+  if ($__install_shell_deps); then install_shell_deps; fi
+
+  if ($__install_node); then install_node; fi
+  if ($__install_python); then install_python; fi
+  if ($__install_ruby); then install_ruby; fi
+  if ($__install_go); then install_go; fi
+
+  if ($__install_aws); then install_aws; fi
+  if ($__install_gcp); then install_gcp; fi
+
+  if ($__install_terraform); then install_terraform; fi
+  if ($__install_opentofu); then install_opentofu; fi
+  if ($__install_terragrunt); then install_terragrunt; fi
+  if ($__install_tflint); then install_tflint; fi
+  if ($__install_hcledit); then install_hcledit; fi
+  if ($__install_sops); then install_sops; fi
+  if ($__install_cloudflared); then install_cloudflared; fi
+
+  if ($__install_coverage); then install_coverage; fi
+
+  if ($__install_gh); then install_gh; fi
+
+  if ($__install_npm); then install_npm_deps; fi
+
+  if ($__install_google_chrome); then install_google_chrome; fi
+
+  if ($__install_security); then
+    # install_cssuite
+    install_dependencycheck
+  fi
+
+  # Clean up unnecessary files and caches.
+  if type "apt-get" &>/dev/null; then
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+  fi
+  rm -rf /var/cache/*
+  rm -rf /root/.cache/*
+  rm -rf /tmp/*
+  # List all installed binaries.
+  ls -lahF --time-style=long-iso --color "/usr/bin"
+}
+
+main "$@"

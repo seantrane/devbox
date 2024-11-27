@@ -1,0 +1,126 @@
+################################################################################
+# DevBox
+# Container image loaded with typical developer dependencies.
+################################################################################
+# - https://docs.docker.com/reference/dockerfile/#understand-how-arg-and-from-interact
+ARG FROM_IMAGE_NAME=ubuntu
+ARG FROM_IMAGE_TAG=22.04
+FROM ${FROM_IMAGE_NAME}:${FROM_IMAGE_TAG}
+
+# Get build-arg value from previous declaration.
+ARG FROM_IMAGE_NAME
+ENV FROM_IMAGE_NAME=${FROM_IMAGE_NAME:-}
+ARG FROM_IMAGE_TAG
+ENV FROM_IMAGE_TAG=${FROM_IMAGE_TAG:-}
+
+# Multi-architecture from buildx, and defaults if buildx not available.
+# - https://docs.docker.com/reference/dockerfile/#automatic-platform-args-in-the-global-scope
+ARG BUILDPLATFORM
+ENV BUILDPLATFORM=${BUILDPLATFORM:-}
+ARG TARGETPLATFORM
+ENV TARGETPLATFORM=${TARGETPLATFORM:-}
+
+# Default 'user:group' is 'dev:adm', ensuring non-root access at runtime.
+# The user settings are not initiated until all build commands are complete.
+ARG GROUP_ID=4
+ARG GROUP_NAME=adm
+ARG USER_ID=1000
+ARG USER_NAME=dev
+# Default user gets a default work directory.
+ARG WORK_DIR=/mnt/pwd
+# Define default charset to computer-UTF8
+ENV LANG=C.UTF-8
+
+#===============================================================================
+# Install DevBox and dependencies.
+#===============================================================================
+
+# Copy DevBox package.
+COPY --chmod=755 opt/devbox /opt/devbox
+# Add DevBox bin to path.
+ENV PATH="/opt/devbox/bin:$PATH"
+
+# Install build dependencies.
+SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
+RUN /opt/devbox/install --build --core --shell
+
+# Configure default system and shell environment settings.
+SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
+RUN chsh -s "/bin/bash" \
+  ; cat "/opt/devbox/etc/.bashrc" >>"/root/.bashrc" \
+  ; cat "/opt/devbox/etc/.bash_aliases" >>"/root/.bash_aliases" \
+  ; /opt/devbox/user_config \
+  ; /opt/devbox/user_config \
+    --uid "${USER_ID}" \
+    --user "${USER_NAME}" \
+    --gid "${GROUP_ID}" \
+    --group "${GROUP_NAME}" \
+    --workdir "${WORK_DIR}" \
+  ;
+
+# Clean up caches and reduce final image size.
+SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
+RUN /opt/devbox/debug \
+  ; rm -rf /var/cache/* \
+  ; rm -rf /root/.cache/* \
+  ; rm -rf /tmp/* \
+  ;
+
+#===============================================================================
+# Labels for container metadata conventions.
+# - http://label-schema.org/rc1/#build-time-labels
+# - https://github.com/opencontainers/image-spec/blob/master/annotations.md
+# - https://help.github.com/en/actions/building-actions/metadata-syntax-for-github-actions
+#===============================================================================
+
+ARG NAME="DevBox"
+ARG DESCRIPTION="DevBox"
+ARG REPO_URL="https://github.com/seantrane/devbox"
+ARG AUTHOR="Sean Trane Sciarrone <seantrane@users.noreply.github.com>"
+ARG HOMEPAGE="${REPO_URL}#readme"
+ARG BUILD_DATE=2024-11-11T00:00:00Z
+ARG VCS_REF=abcdef1
+ARG VERSION="latest"
+LABEL \
+  org.label-schema.build-date="${BUILD_DATE}" \
+  org.label-schema.name="${NAME}" \
+  org.label-schema.description="${DESCRIPTION}" \
+  org.label-schema.usage="${REPO_URL}#usage" \
+  org.label-schema.url="${HOMEPAGE}" \
+  org.label-schema.vcs-url="${REPO_URL}" \
+  org.label-schema.vcs-ref="${VCS_REF}" \
+  org.label-schema.vendor="${AUTHOR}" \
+  org.label-schema.version="${VERSION}" \
+  org.label-schema.schema-version="1.0"	\
+  org.opencontainers.image.created="${BUILD_DATE}" \
+  org.opencontainers.image.authors="${AUTHOR}" \
+  org.opencontainers.image.url="${HOMEPAGE}" \
+  org.opencontainers.image.documentation="${REPO_URL}#usage" \
+  org.opencontainers.image.source="${REPO_URL}" \
+  org.opencontainers.image.version="${VERSION}" \
+  org.opencontainers.image.revision="${VCS_REF}" \
+  org.opencontainers.image.vendor="${AUTHOR}" \
+  org.opencontainers.image.licenses="ISC" \
+  org.opencontainers.image.title="${NAME}" \
+  org.opencontainers.image.description="${DESCRIPTION}" \
+  maintainer="${AUTHOR}" \
+  repository="${REPO_URL}"
+
+#===============================================================================
+
+USER ${USER_NAME}:${GROUP_NAME}
+
+SHELL ["/bin/bash"]
+
+WORKDIR ${WORK_DIR}
+
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["bash", "-i", "-l"]
+
+HEALTHCHECK \
+  --interval=3m33s \
+  --timeout=9s \
+  --start-period=60s \
+  --retries=3 \
+  CMD ["apt-get", "--version"]

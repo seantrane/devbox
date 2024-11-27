@@ -1,0 +1,50 @@
+# Enable auto-env through the sdkman_auto_env config
+# Add key=value pairs of SDKs to use below
+# - https://sdkman.io/sdks#java
+# - https://projects.eclipse.org/projects/adoptium.temurin/
+java=21.0.5-tem
+# - https://sdkman.io/sdks#gradle
+# - http://gradle.org/
+gradle=8.11.1
+# - https://sdkman.io/sdks#grails
+# - https://grails.org/
+# Stop! grails 6.2.1 is incompatible with "arm64".
+# grails=6.2.1
+# - https://sdkman.io/sdks#groovy
+# - http://www.groovy-lang.org/
+groovy=4.0.24
+# - https://sdkman.io/sdks#jmeter
+# - https://jmeter.apache.org/
+jmeter=5.6
+# - https://sdkman.io/sdks#kotlin
+# - https://kotlinlang.org/
+kotlin=2.0.21
+# - https://sdkman.io/sdks#kscript
+# - https://github.com/holgerbrandl/kscript
+kscript=4.2.3
+# - https://sdkman.io/sdks#liquibase
+# - https://liquibase.com/
+liquibase=4.30.0
+# - https://sdkman.io/sdks#maven
+# - https://maven.apache.org/
+maven=3.9.9
+# - https://sdkman.io/sdks#mcs
+# - https://github.com/mthmulders/mcs
+# Stop! mcs 0.7.1 is incompatible with "arm64".
+# mcs=0.7.1
+# - https://sdkman.io/sdks#mvnd
+# - https://github.com/apache/maven-mvnd
+# Stop! mvnd 1.0.2 is incompatible with "arm64".
+# mvnd=1.0.2
+# - https://sdkman.io/sdks#sbt
+# - http://www.scala-sbt.org/
+sbt=1.10.5
+# - https://sdkman.io/sdks#scala
+# - http://www.scala-lang.org/
+scala=3.5.2
+# - https://sdkman.io/sdks#scalacli
+# - https://scala-cli.virtuslab.org/
+scalacli=1.5.4
+# - https://sdkman.io/sdks#springboot
+# - http://projects.spring.io/spring-boot/
+springboot=3.4.0

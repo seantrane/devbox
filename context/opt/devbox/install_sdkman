@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#
+# SDKMAN! - The Software Development Kit Manager
+# - https://sdkman.io
+#
+# Java is the #1 programming language and development platform.
+# - https://dev.java
+# - https://openjdk.org
+#
+# shellcheck disable=SC2005,SC2015,SC1090,SC1091,SC2120
+
+export SDKMAN_DIR="/opt/sdkman"
+
+mv -f /bin/sh /bin/sh.backup && ln -s /bin/bash /bin/sh
+
+# curl -s "https://get.sdkman.io?rcupdate=false" | bash
+source <(curl -s "https://get.sdkman.io?rcupdate=false")
+chmod a+x "$SDKMAN_DIR/bin/sdkman-init.sh"
+
+set -x
+{
+  echo "sdkman_auto_answer=true"
+  echo "sdkman_auto_complete=true"
+  echo "sdkman_auto_env=false"
+  echo "sdkman_auto_selfupdate=false"
+  echo "sdkman_colour_enable=true"
+  echo "sdkman_insecure_ssl=false"
+  echo "sdkman_selfupdate_feature=false"
+} >>"$SDKMAN_DIR/etc/config"
+
+[[ -s "$SDKMAN_DIR/bin/sdkman-init.sh" ]] && source "$SDKMAN_DIR/bin/sdkman-init.sh" && exec "$@"
+
+source /root/.bashrc
+
+cat "/opt/devbox/etc/.sdkmanrc" >>"/root/.sdkmanrc"
+(
+  cd /root || cd || echo "[ERROR] Cannot find /root directory."
+  source "$SDKMAN_DIR/bin/sdkman-init.sh" && sdk env install
+)
+
+rm -f /bin/sh && mv -f /bin/sh.backup /bin/sh

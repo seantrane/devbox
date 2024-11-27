@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# Configure user and shell environment settings.
+#
+# shellcheck disable=SC2005,SC2120
+# spell-checker: disable
+
+# Settings to ensure exit on errors.
+# CI/CD, builds, and tests should not proceed if something has gone wrong.
+# - https://gist.github.com/seantrane/2576d590db03bc67c9711abeeafca803
+set -Eeuxo pipefail
+# Enable 'verbose' option for debugging.
+# set -v
+
+main() {
+  local __workdir="" \
+    __user_id="1000" \
+    __user_name="dev" \
+    __group_id="4" \
+    __group_name="adm" \
+    __groups="adm,dialout,sudo,operator,staff,users" \
+    __shell="/bin/bash"
+
+  # Loop through function options and arguments.
+  while [[ $# -gt 0 ]]; do
+    _key="${1:-}"
+    case "$_key" in
+    --uid)
+      if [[ -n "${2:-}" ]] && [[ "${2:-}" != "-"* ]]; then
+        __user_id="${2:-${__user_id}}"
+        shift
+      fi
+      ;;
+    --user)
+      if [[ -n "${2:-}" ]] && [[ "${2:-}" != "-"* ]]; then
+        __user_name="${2:-${__user_name}}"
+        shift
+      fi
+      ;;
+    --gid)
+      if [[ -n "${2:-}" ]] && [[ "${2:-}" != "-"* ]]; then
+        __group_id="${2:-${__group_id}}"
+        shift
+      fi
+      ;;
+    --group)
+      if [[ -n "${2:-}" ]] && [[ "${2:-}" != "-"* ]]; then
+        __group_name="${2:-${__group_name}}"
+        shift
+      fi
+      ;;
+    --groups)
+      if [[ -n "${2:-}" ]] && [[ "${2:-}" != "-"* ]]; then
+        __groups="${2:-${__groups}}"
+        shift
+      fi
+      ;;
+    --shell)
+      if [[ -n "${2:-}" ]] && [[ "${2:-}" != "-"* ]]; then
+        __shell="${2:-${__shell}}"
+        shift
+      fi
+      ;;
+    --workdir)
+      if [[ -n "${2:-}" ]] && [[ "${2:-}" != "-"* ]]; then
+        __workdir="${2:-}"
+        shift
+      fi
+      ;;
+    *) ;;
+    esac
+    shift
+  done
+
+  ##############################################################################
+  # Create non-root user/group.
+  ##############################################################################
+
+  # Add $(id -un):adm user.
+  useradd --system --create-home --no-user-group \
+    --uid "${__user_id}" \
+    -g "${__group_name}" \
+    --groups "${__groups}" \
+    --shell "${__shell}" \
+    "${__user_name}"
+  passwd -d "${__user_name}"
+  echo "${__user_name}  ALL=(ALL) NOPASSWD:ALL" >>/etc/sudoers
+  if [[ -r "/opt/devbox/etc/.bashrc" ]]; then
+    cat "/opt/devbox/etc/.bashrc" >>"/home/${__user_name}/.bashrc"
+  fi
+  if [[ -r "/opt/devbox/etc/.bash_aliases" ]]; then
+    cat "/opt/devbox/etc/.bash_aliases" >>"/home/${__user_name}/.bash_aliases"
+  fi
+
+  chown -Rf "${__user_name}:${__group_name}" "/home/${__user_name}"
+  chmod -Rf 644 "/home/${__user_name}"
+  chmod -f 750 "/home/${__user_name}"
+
+  ls -lahF --time-style=long-iso --color "/home/${__user_name}"
+
+  ##############################################################################
+  # Create work directory.
+  ##############################################################################
+
+  if [[ -n "$__workdir" ]]; then
+    echo "Create work directory."
+    mkdir -p "${__workdir}"
+    chown -Rf "${__user_name}:${__group_name}" "${__workdir}"
+    chmod -Rf 775 "${__workdir}"
+    ls -lahF --time-style=long-iso --color "${__workdir}/.."
+  fi
+}
+
+main "$@"

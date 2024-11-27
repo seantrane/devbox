@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Output debug info for DevBox configuration.
+#
+# shellcheck disable=SC2005,SC2120
+# spell-checker: disable
+
+# Settings to ensure exit on errors.
+# CI/CD, builds, and tests should not proceed if something has gone wrong.
+# - https://gist.github.com/seantrane/2576d590db03bc67c9711abeeafca803
+set -Eeuxo pipefail
+# Enable 'verbose' option for debugging.
+# set -v
+
+main() {
+  local _vars=(
+    "FROM_IMAGE_NAME"
+    "FROM_IMAGE_TAG"
+    "BUILDPLATFORM"
+    "TARGETPLATFORM"
+    "AWS_VERSION"
+    "CHROME_RELEASE"
+    "CHROMEDRIVER_VERSION"
+    "DOCKER_COMPOSE_VERSION"
+    "GCP_VERSION"
+    "GO_VERSION"
+    "OPENTOFU_VERSION"
+    "TERRAFORM_VERSION"
+    "TERRAGRUNT_VERSION"
+    "GROUP_ID"
+    "GROUP_NAME"
+    "USER_ID"
+    "USER_NAME"
+    "WORK_DIR"
+  )
+  if [[ -n "${1:-}" ]]; then _vars+=("$@"); fi
+  for _var in "${_vars[@]}"; do
+    echo "$_var = ${!_var:-}"
+  done
+}
+
+main "$@"
