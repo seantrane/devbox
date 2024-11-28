@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [1.0.1](https://github.com/seantrane/devbox/compare/v1.0.0...v1.0.1) (2024-11-28)
+
+
+### Bug Fixes
+
+* resolve unique user id error during user config ([d782bf6](https://github.com/seantrane/devbox/commit/d782bf646f16a58a6edeeba16f22a3f76b14dc9b))
+* use add-to-path bootstrap only ([28521f7](https://github.com/seantrane/devbox/commit/28521f7f01995ee670f07a3dfff2fb128f79fd46))
+
 # 1.0.0 (2024-11-27)
 
 
