@@ -1,4 +1,4 @@
-# Docker DevBox
+# DevBox
 
 > DevBox is a portable virtual development environment supporting Everything-as-Code principles.
 
@@ -16,9 +16,9 @@
 
 ## About <a id="about"></a>
 
-The Docker DevBox is a portable shell environment and toolkit for software/ops engineers, using Docker.
+The DevBox is a portable shell environment and toolkit for software/ops engineers, using Docker/containers.
 
-It contains many of the _typical_ dependencies that a full-stack engineer uses on a regular basis. It is meant to be forked and manicured to whatever liking an individual wishes, as everyone has their own unique preferences.
+It contains many of the _typical_ dependencies that full-stack engineers use on a regular basis. It is meant to be forked and manicured to whatever liking an individual wishes, as everyone has their own unique preferences.
 
 ## Install <a id="install"></a>
 
