@@ -347,21 +347,9 @@ devbox() {
     ;;
   bootstrap)
     {
-      local _bin_dir="/usr/local/bin"
-      if [[ ! -d "$_bin_dir" ]] || [[ ! -w "$_bin_dir" ]]; then
-        if [[ -d "/usr/bin" ]] && [[ -w "/usr/bin" ]]; then
-          _bin_dir="/usr/bin"
-        elif [[ -d "/bin" ]] && [[ -w "/bin" ]]; then
-          _bin_dir="/bin"
-        fi
-      fi
-      if [[ -d "$_bin_dir" ]] && [[ -w "$_bin_dir" ]]; then
-        ln -sf "${DEVBOX_REPO_ROOT_PATH}/bin/devbox" "$_bin_dir/devbox"
-      else
-        local _devbox_path_export="export PATH=\"${DEVBOX_REPO_ROOT_PATH}/bin:\$PATH\""
-        echo "$_devbox_path_export" >>~/.aliases
-        echo "$_devbox_path_export" >>~/.bash_aliases
-      fi
+      local _devbox_path_export="export PATH=\"${DEVBOX_REPO_ROOT_PATH}/bin:\$PATH\""
+      echo "$_devbox_path_export" >>~/.aliases
+      echo "$_devbox_path_export" >>~/.bash_aliases
     } && echo "devbox successfully bootstrapped!"
     ;;
   build*)
