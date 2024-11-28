@@ -88,6 +88,7 @@ RUN chsh -s "/bin/bash" \
   ; cat "/opt/devbox/etc/.bashrc" >>"/root/.bashrc" \
   ; cat "/opt/devbox/etc/.bash_aliases" >>"/root/.bash_aliases" \
   ; /opt/devbox/user_config \
+    --uid "6969" \
   ; /opt/devbox/user_config \
     --uid "${USER_ID}" \
     --user "${USER_NAME}" \
