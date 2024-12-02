@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [1.0.2](https://github.com/seantrane/devbox/compare/v1.0.1...v1.0.2) (2024-12-02)
+
+
+### Bug Fixes
+
+* improve bats-core support ([b83423a](https://github.com/seantrane/devbox/commit/b83423afa87b56c59442be706f51cb6f8884d434))
+* resolve devbox build, upgrade bugs ([2d9fbe7](https://github.com/seantrane/devbox/commit/2d9fbe78c2fbd5c851bb977d4440a00b7708fa84))
+
 ## [1.0.1](https://github.com/seantrane/devbox/compare/v1.0.0...v1.0.1) (2024-11-28)
 
 
