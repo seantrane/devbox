@@ -12,9 +12,6 @@ set -Eeuo pipefail
 # set -x
 # set -v
 
-# DEPENDENCIES
-! type "docker" &>/dev/null && echo "!!! Please install docker before running this script !!!" && return 1
-
 # GLOBAL VARS
 DEVBOX_REPO_ROOT_PATH=$(cd "${BASH_SOURCE%/*}/.." && pwd)
 DEVBOX_GROUP_ID="$(id -g)"
@@ -23,6 +20,8 @@ DEVBOX_USER_ID="$(id -u)"
 DEVBOX_USER_NAME="$(id -un)"
 DEVBOX_IMAGE_NAME="${DEVBOX_USER_NAME}/devbox"
 DEVBOX_IMAGE_TAG="full"
+# Set the container timezone to the host user's timezone.
+TZ="${TZ:-$(readlink /etc/localtime | sed 's#/var/db/timezone/zoneinfo/##')}"
 export \
   DEVBOX_REPO_ROOT_PATH \
   DEVBOX_IMAGE_NAME \
@@ -31,7 +30,16 @@ export \
   DEVBOX_GROUP_NAME \
   DEVBOX_USER_ID \
   DEVBOX_USER_NAME \
+  TZ \
   ;
+
+datetime_z() {
+  if [[ "${1:-}" == "slug" ]]; then
+    date -u +%Y%m%dT%H%M%SZ
+  else
+    date -u +%Y-%m-%dT%H:%M:%SZ
+  fi
+}
 
 #######################################
 # Get the default git branch (from git clone).
@@ -43,7 +51,15 @@ export \
 #   Default git branch name
 #######################################
 git_default_branch() {
-  (git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@') 2>/dev/null
+  (cd "$DEVBOX_REPO_ROOT_PATH" && git remote show origin | sed -n '/HEAD branch/s/.*: //p') 2>/dev/null
+}
+
+git_vcs_ref() {
+  (cd "$DEVBOX_REPO_ROOT_PATH" && git show-ref --hash=7 "$(git_default_branch)" | head -n 1) 2>/dev/null
+}
+
+git_version_tag_or_commit() {
+  (cd "$DEVBOX_REPO_ROOT_PATH" && git describe --tags --abbrev=0 --always --first-parent) 2>/dev/null
 }
 
 #######################################
@@ -125,12 +141,11 @@ docker_build_image() {
   OPTS+=(--build-arg "USER_ID=$DEVBOX_USER_ID")
   OPTS+=(--build-arg "USER_NAME=$DEVBOX_USER_NAME")
 
-  OPTS+=(--build-arg "BUILD_DATE=$(date --utc +%Y-%m-%dT%XZ)")
-  OPTS+=(--build-arg "VCS_REF=$(git show-ref --hash=7 "$(git_default_branch)" | head -n 1)")
-  OPTS+=(--build-arg "VERSION=$(git describe --tags --abbrev=0 --always --first-parent 2>/dev/null)")
-
   OPTS+=(--build-arg "DESCRIPTION=$(devbox__description)")
+  OPTS+=(--build-arg "VCS_REF=$(git_vcs_ref)")
+  OPTS+=(--build-arg "VERSION=$(git_version_tag_or_commit)")
 
+  OPTS+=(--build-arg "BUILD_DATE=$(datetime_z)")
   # echo && echo "docker build ${OPTS[*]} $_context"
   docker build "${OPTS[@]}" "$_context"
 
@@ -169,8 +184,6 @@ docker_run_container() {
   # [[ ! -t 0 ]] && OPTS+=(-q)
   # Mount volume to map current directory (on host) to work directory (on container).
   OPTS+=(-v "$(pwd):/mnt/pwd")
-  # Set the container timezone to the host user's timezone.
-  TZ="$(readlink /etc/localtime | sed 's#/var/db/timezone/zoneinfo/##')"
   OPTS+=(-e "TZ=${TZ:-}")
   # local _homedir="/root"
   _homedir="/home/$DEVBOX_USER_NAME"
@@ -335,6 +348,12 @@ devbox__help() {
 #   None
 ################################################################################
 devbox() {
+  # Required dependencies
+  if ! type "docker" &>/dev/null; then
+    echo "!!! Please install/run docker before running this script !!!"
+    return 1
+  fi
+  # Declare variables and shift argument-array.
   local _cmd="${1:-}" _image_tag="$DEVBOX_IMAGE_TAG"
   shift
   # Loop through function options and arguments.
@@ -378,12 +397,14 @@ devbox() {
     (
       cd "$DEVBOX_REPO_ROOT_PATH"
       _active_branch="$(git rev-parse --abbrev-ref HEAD)"
-      _origin_branch="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@' 2>/dev/null)"
+      _origin_branch="$(git_default_branch)"
       if [[ "$_active_branch" == "$_origin_branch" ]] && [[ -n "$(git diff "origin/$_origin_branch")" ]]; then
         _git_changes="$(git status --porcelain)"
-        type "awk" &>/dev/null && _git_changes="$(git status --porcelain | awk 'match($1, "[D,M]"){print $2}' 2>/dev/null)"
+        if type "awk" &>/dev/null; then
+          _git_changes="$(echo "$_git_changes" | awk 'match($1, "[D,M]"){print $2}' 2>/dev/null)"
+        fi
         if [[ -n "$_git_changes" ]]; then
-          _git_stash_name="changes-$(date --utc +%Y%m%dT%H%M%SZ)"
+          _git_stash_name="changes-$(datetime_z slug)"
           git add -A .
           git stash "$_git_stash_name"
           echo "[ALERT] Changes have been added to Git Stash: '$_git_stash_name'"
@@ -392,7 +413,7 @@ devbox() {
         git pull
         echo "[SUCCESS] Latest changes pulled. Please 'devbox rebuild' images, or 'devbox rerun' containers, to apply."
       else
-        echo "[ALERT] You are not using the default branch. Changes may only be pulled from the default branch."
+        echo "[ALERT] You are not using the default branch ('$_active_branch'). Changes may only be pulled from the default branch."
         echo "[INFO] Please stash or commit your changes and switch to the default branch before attempting 'devbox upgrade'."
       fi
     )

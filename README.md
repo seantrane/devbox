@@ -2,9 +2,14 @@
 
 > DevBox is a portable virtual development environment supporting Everything-as-Code principles.
 
+![policy](https://img.shields.io/badge/-Policy:-white?style=flat-square) [![Commitizen friendly](https://img.shields.io/badge/commitizen-friendly-brightgreen.svg)](http://commitizen.github.io/cz-cli/) [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
+
+![workflows](https://img.shields.io/badge/-Workflows:-white?style=flat-square) [![Integration](https://github.com/seantrane/devbox/actions/workflows/integration.yml/badge.svg)](https://github.com/seantrane/devbox/actions/workflows/integration.yml) [![Delivery](https://github.com/seantrane/devbox/actions/workflows/delivery.yml/badge.svg)](https://github.com/seantrane/devbox/actions/workflows/delivery.yml)
+
 ## Table of Contents
 
 - [About](#about)
+- [Features](#features)
 - [Install](#install)
 - [Usage](#usage)
 - [Support](#support)
@@ -16,13 +21,23 @@
 
 ## About <a id="about"></a>
 
-The DevBox is a portable shell environment and toolkit for software/ops engineers, using Docker/containers.
+The **DevBox** is a portable shell environment and toolkit for software/ops engineers. It builds Docker images packed with common tools so that they can be used via Containers.
 
-It contains many of the _typical_ dependencies that full-stack engineers use on a regular basis. It is meant to be forked and manicured to whatever liking an individual wishes, as everyone has their own unique preferences.
+This saves us from requiring more from the host machine other than [`brew install docker kubectl helm`](https://brew.sh), and [Rancher Desktop](https://rancherdesktop.io) _(to manage image/container resources)_.
+
+## Features <a id="features"></a>
+
+- Bash shell, upgraded and enhanced with completions, colors, functions, aliases, etc.
+- Common build dependencies needed by a variety of languages.
+- Common global dependencies for [Nodejs](https://nodejs.org), [Python](https://www.python.org), and [Ruby](https://www.ruby-lang.org).
+- Java toolset managed with [SDKMAN!](https://sdkman.io)
+- Infrastructure-as-Code tools, e.g.; [OpenTofu](https://opentofu.org), [Terraform](https://www.terraform.io), and [Terragrunt](https://terragrunt.gruntwork.io).
 
 ## Install <a id="install"></a>
 
-1. Clone repo to a user-accessible directory. These instructions use the "$HOME" directory, where most users are guaranteed to have access.
+> **[Forking is encouraged!](https://github.com/seantrane/devbox/fork)** Everyone has their own unique preferences. For those who take this route, remember to pull from _your_ repo in the instructions below. Then `git checkout -b my_branch` so you can manage upstream changes on `main` without impacting `my_branch`.
+
+1. Clone repo to a user-accessible directory. These instructions use the `HOME` directory, where most users are guaranteed to have access.
 
    ```sh
    git clone https://github.com/seantrane/devbox.git "$HOME/devbox"
