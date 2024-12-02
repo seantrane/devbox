@@ -67,6 +67,8 @@ RUN /opt/devbox/debug \
   ; rm -rf /tmp/* \
   ;
 
+ENV BATS_LIB_PATH=${BATS_LIB_PATH:-/opt/bats/lib}
+
 #===============================================================================
 # Labels for container metadata conventions.
 # - http://label-schema.org/rc1/#build-time-labels

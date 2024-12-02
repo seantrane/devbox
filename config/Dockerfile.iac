@@ -102,6 +102,8 @@ SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
 RUN /opt/devbox/install --iac \
   ; /opt/devbox/debug
 
+ENV BATS_LIB_PATH=${BATS_LIB_PATH:-/opt/bats/lib}
+
 #===============================================================================
 # Labels for container metadata conventions.
 # - http://label-schema.org/rc1/#build-time-labels

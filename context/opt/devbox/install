@@ -80,6 +80,8 @@ install_core_deps() {
   echo "Installing core dependencies."
   pm_handler apt install \
     ca-certificates \
+    coreutils \
+    file \
     git \
     git-lfs \
     jq \
@@ -89,6 +91,7 @@ install_core_deps() {
     ;
   pm_handler apt install \
     bc \
+    dnsutils \
     docker.io \
     graphviz \
     hub \
@@ -444,11 +447,16 @@ install_coverage() {
       make install
     )
   fi
-  if [[ ! -d "/usr/local/lib/bats-core" ]]; then
+  if [[ ! -d "/opt/bats/bin" ]]; then
     echo "Installing Bats-core, for shell script unit testing."
-    git clone "https://github.com/bats-core/bats-core.git" /tmp/bats-core
-    /tmp/bats-core/install.sh /usr/local
-    rm -rf /tmp/bats-core
+    git clone "https://github.com/bats-core/bats-core.git" /opt/bats
+    # /opt/bats/install.sh /usr/local
+    ln -s /opt/bats/bin/bats /usr/local/bin/bats
+    export BATS_LIBS_DEST_DIR="${BATS_LIB_PATH:-/opt/bats/lib}"
+    /opt/bats/docker/install_libs.sh support "${BATS_SUPPORT_VERSION:-0.3.0}"
+    /opt/bats/docker/install_libs.sh file "${BATS_FILE_VERSION:-0.4.0}"
+    /opt/bats/docker/install_libs.sh assert "${BATS_ASSERT_VERSION:-2.1.0}"
+    /opt/bats/docker/install_libs.sh detik "${BATS_DETIK_VERSION:-1.3.2}"
   fi
   if [[ ! -d "/opt/lcov" ]]; then
     # - https://github.com/linux-test-project/lcov
@@ -657,7 +665,6 @@ main() {
       __install_core_deps=true
       ;;
     --dev)
-      __install_coverage=true
       __install_gh=true
       __install_go=true
       __install_node=true
@@ -722,6 +729,7 @@ main() {
       __install_security=true
       ;;
     --shell)
+      __install_coverage=true
       __install_shell_deps=true
       ;;
     --terraform)
