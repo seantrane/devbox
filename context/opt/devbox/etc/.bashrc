@@ -69,7 +69,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 [[ -d "$HOME/sbin" ]] && export PATH="$HOME/sbin:$PATH"
 
 # Add Go to PATH.
-[[ -d "/usr/local/go/bin" ]] && PATH="$PATH:/usr/local/go/bin"
+[[ -d "/usr/local/go/bin" ]] && export PATH="$PATH:/usr/local/go/bin"
 
 # Add Yarn to PATH.
 type "yarn" &>/dev/null && PATH="$(yarn global bin):$PATH"
@@ -81,18 +81,21 @@ if [[ -d "/google-cloud-sdk" ]]; then
   PATH="$PATH:/google-cloud-sdk/bin"
 fi
 
-[[ -d "/opt/dependency-check/bin" ]] && PATH="$PATH:/opt/dependency-check/bin"
+[[ -d "/opt/dependency-check/bin" ]] && export PATH="$PATH:/opt/dependency-check/bin"
 
 # Homebrew path must come first to override system binaries.
-[[ -d "${HOMEBREW_PREFIX:-}/bin" ]] && PATH="${HOMEBREW_PREFIX:-}/bin:$PATH"
+[[ -d "${HOMEBREW_PREFIX:-}/bin" ]] && export PATH="${HOMEBREW_PREFIX:-}/bin:$PATH"
 
 # Add DevBox binaries to PATH.
 [[ -d "/opt/devbox/bin" ]] && export PATH="/opt/devbox/bin:$PATH"
 
+# Add ./bin directory, if available, from active PWD.
+[[ -d "$(pwd)/bin" ]] && PATH="$(pwd)/bin:$PATH"
+
 # HELP DOCS/MANUALS
-[[ -d "${HOMEBREW_PREFIX:-}/man" ]] && MANPATH="${HOMEBREW_PREFIX:-}/man:$MANPATH"
+[[ -d "${HOMEBREW_PREFIX:-}/man" ]] && export MANPATH="${HOMEBREW_PREFIX:-}/man:$MANPATH"
 # .local manuals:
-[[ -d "$HOME/.local/man" ]] && MANPATH="$HOME/.local/man:$MANPATH"
+[[ -d "$HOME/.local/man" ]] && export MANPATH="$HOME/.local/man:$MANPATH"
 
 # . ~/.paths
 [[ -f "$HOME/.paths" ]] && . "$HOME/.paths"
