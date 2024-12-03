@@ -1,5 +1,4 @@
 # https://pypi.org/search/
-# azure-cli==2.65.0 # depends on PyGithub~=1.38
 boto3==1.35.54
 cloudflare==3.1.0
 matplotlib==3.9.2

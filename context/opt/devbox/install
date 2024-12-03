@@ -63,12 +63,17 @@ pm_handler() {
 install_build_deps() {
   echo "Installing build dependencies."
   pm_handler apt install \
+    apt-transport-https \
     apt-utils \
     build-essential \
-    cmake \
+    ca-certificates \
     curl \
     gcc \
     gnupg \
+    lsb-release \
+    ;
+  pm_handler apt install \
+    cmake \
     sudo \
     unzip \
     wget \
@@ -79,13 +84,11 @@ install_build_deps() {
 install_core_deps() {
   echo "Installing core dependencies."
   pm_handler apt install \
-    ca-certificates \
     coreutils \
     file \
     git \
     git-lfs \
     jq \
-    lsb-release \
     vim \
     zip \
     ;
@@ -119,13 +122,13 @@ install_shell_deps() {
     ;
   pm_handler apt install \
     binutils-dev \
-    libssl-dev \
     libcurl4-openssl-dev \
+    libdw-dev \
     libelf-dev \
+    libiberty-dev \
+    libssl-dev \
     libstdc++-12-dev \
     zlib1g-dev \
-    libdw-dev \
-    libiberty-dev \
     ;
   echo "Set Bash as default shell."
   sed -i -e "s/bin\/sh/bin\/bash/" /etc/passwd
@@ -246,6 +249,36 @@ install_aws() {
   # Validate install.
   command -v aws
   aws --version
+}
+
+# Azure CLI
+# - https://learn.microsoft.com/en-us/cli/azure/
+install_azure() {
+  # Get/set version.
+  local _distro _version="${1:-${AZURE_VERSION:-"-latest"}}"
+  _distro="$(lsb_release -cs)"
+  # Get/install dependencies with retries on failure.
+  echo "Installing Azure CLI v${_version} (${_distro})."
+  sudo mkdir -p /etc/apt/keyrings
+  curl -sLS https://packages.microsoft.com/keys/microsoft.asc |
+    gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft.gpg >/dev/null
+  sudo chmod go+r /etc/apt/keyrings/microsoft.gpg
+  echo "Types: deb
+URIs: https://packages.microsoft.com/repos/azure-cli/
+Suites: ${_distro}
+Components: main
+Architectures: $(dpkg --print-architecture)
+Signed-by: /etc/apt/keyrings/microsoft.gpg" | sudo tee /etc/apt/sources.list.d/azure-cli.sources
+  pm_handler apt update
+  if [[ -z "$_version" ]] || [[ "$_version" == *"latest" ]]; then
+    pm_handler apt install azure-cli
+  else
+    pm_handler apt install "azure-cli=${_version}-1~${_distro}" ||
+      pm_handler apt install azure-cli
+  fi
+  # Validate install.
+  command -v az
+  az --version
 }
 
 # Cloudflare - Create a locally-managed tunnel (CLI).
@@ -457,6 +490,7 @@ install_coverage() {
     /opt/bats/docker/install_libs.sh file "${BATS_FILE_VERSION:-0.4.0}"
     /opt/bats/docker/install_libs.sh assert "${BATS_ASSERT_VERSION:-2.1.0}"
     /opt/bats/docker/install_libs.sh detik "${BATS_DETIK_VERSION:-1.3.2}"
+    git clone "https://github.com/buildkite-plugins/bats-mock.git" "${BATS_LIBS_DEST_DIR}/bats-mock"
   fi
   if [[ ! -d "/opt/lcov" ]]; then
     # - https://github.com/linux-test-project/lcov
@@ -630,6 +664,7 @@ install_dependencycheck() {
 main() {
   local __install_build_deps=false \
     __install_aws=false \
+    __install_azure=false \
     __install_cloudflared=false \
     __install_core_deps=false \
     __install_gcp=false \
@@ -687,6 +722,7 @@ main() {
       ;;
     --iac)
       __install_aws=true
+      __install_azure=true
       __install_cloudflared=true
       __install_gcp=true
       __install_go=true
@@ -757,6 +793,7 @@ main() {
   if ($__install_go); then install_go; fi
 
   if ($__install_aws); then install_aws; fi
+  if ($__install_azure); then install_azure; fi
   if ($__install_gcp); then install_gcp; fi
 
   if ($__install_terraform); then install_terraform; fi
