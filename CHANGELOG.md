@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [1.0.3](https://github.com/seantrane/devbox/compare/v1.0.2...v1.0.3) (2024-12-03)
+
+
+### Bug Fixes
+
+* add azure-cli installer ([de5de42](https://github.com/seantrane/devbox/commit/de5de427aa64b69408bd60dbec5a69081c571aaa))
+* add host "$(pwd)/bin" directory to container path ([16e833e](https://github.com/seantrane/devbox/commit/16e833eb6617881bc2cbf137e1042edccdf3cabc))
+
 ## [1.0.2](https://github.com/seantrane/devbox/compare/v1.0.1...v1.0.2) (2024-12-02)
 
 
