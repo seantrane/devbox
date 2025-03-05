@@ -601,12 +601,12 @@ install_google_chrome() {
     _version="$_cft_version"
   fi
   echo "Installing Google Chrome ${_version}"
-  retry_command curl -LO "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${_version}/${_arch}/chrome-${_arch}.zip"
+  retry_command curl -LO "https://storage.googleapis.com/chrome-for-testing-public/${_version}/${_arch}/chrome-${_arch}.zip"
   unzip "chrome-${_arch}.zip" -d /opt
   rm -f "chrome-${_arch}.zip"
   ln -s "/opt/chrome-${_arch}/chrome" /usr/bin/chrome
   echo "Installing Google ChromeDriver ${_version}"
-  retry_command curl -LO "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${_version}/${_arch}/chromedriver-${_arch}.zip"
+  retry_command curl -LO "https://storage.googleapis.com/chrome-for-testing-public/${_version}/${_arch}/chromedriver-${_arch}.zip"
   unzip "chromedriver-${_arch}.zip" -d /opt/selenium
   rm -f "chromedriver-${_arch}.zip"
   ln -s "/opt/selenium/chromedriver-${_arch}/chromedriver" /usr/bin/chromedriver
