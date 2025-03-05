@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [1.0.4](https://github.com/seantrane/devbox/compare/v1.0.3...v1.0.4) (2025-03-05)
+
+
+### Bug Fixes
+
+* change chrome download url prefix ([e097b7a](https://github.com/seantrane/devbox/commit/e097b7a4a58f2f138af920c05fd54393a8bbd70c))
+
 ## [1.0.3](https://github.com/seantrane/devbox/compare/v1.0.2...v1.0.3) (2024-12-03)
 
 
