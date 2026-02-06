@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [1.0.5](https://github.com/seantrane/devbox/compare/v1.0.4...v1.0.5) (2026-02-06)
+
+
+### Bug Fixes
+
+* bump sdkman package versions ([c1360e2](https://github.com/seantrane/devbox/commit/c1360e2bbc5365db1a87a32536b72f8a682ec835))
+* update 'full' image installs ([bb85346](https://github.com/seantrane/devbox/commit/bb853467b93f8392fcc931ba99b149b146e6fd18))
+* update packages, installers ([58e3d42](https://github.com/seantrane/devbox/commit/58e3d42896a0c70eb60f7b46a703875a58d0f364))
+
 ## [1.0.4](https://github.com/seantrane/devbox/compare/v1.0.3...v1.0.4) (2025-03-05)
 
 
