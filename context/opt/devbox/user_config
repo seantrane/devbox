@@ -78,25 +78,27 @@ main() {
 
   # Add $(id -un):adm user.
   useradd --system --create-home --no-user-group \
-    --uid "${__user_id}" \
-    -g "${__group_name}" \
-    --groups "${__groups}" \
-    --shell "${__shell}" \
-    "${__user_name}"
-  passwd -d "${__user_name}"
-  echo "${__user_name}  ALL=(ALL) NOPASSWD:ALL" >>/etc/sudoers
+    --uid "$__user_id" \
+    -g "$__group_name" \
+    --groups "$__groups" \
+    --shell "$__shell" \
+    "$__user_name"
+  passwd -d "$__user_name"
+  # echo "${__user_name} ALL=(ALL) NOPASSWD:ALL" >>/etc/sudoers
+  echo "$__user_name ALL=(ALL) NOPASSWD:ALL" >"/etc/sudoers.d/$__user_name"
+  chmod 0440 "/etc/sudoers.d/$__user_name"
   if [[ -r "/opt/devbox/etc/.bashrc" ]]; then
-    cat "/opt/devbox/etc/.bashrc" >>"/home/${__user_name}/.bashrc"
+    cat "/opt/devbox/etc/.bashrc" >>"/home/$__user_name/.bashrc"
   fi
   if [[ -r "/opt/devbox/etc/.bash_aliases" ]]; then
-    cat "/opt/devbox/etc/.bash_aliases" >>"/home/${__user_name}/.bash_aliases"
+    cat "/opt/devbox/etc/.bash_aliases" >>"/home/$__user_name/.bash_aliases"
   fi
 
-  chown -Rf "${__user_name}:${__group_name}" "/home/${__user_name}"
-  chmod -Rf 644 "/home/${__user_name}"
-  chmod -f 750 "/home/${__user_name}"
+  chown -Rf "${__user_name}:${__group_name}" "/home/$__user_name"
+  chmod -Rf 644 "/home/$__user_name"
+  chmod -f 750 "/home/$__user_name"
 
-  ls -lahF --time-style=long-iso --color "/home/${__user_name}"
+  ls -lahF --time-style=long-iso --color "/home/$__user_name"
 
   ##############################################################################
   # Create work directory.
@@ -104,10 +106,10 @@ main() {
 
   if [[ -n "$__workdir" ]]; then
     echo "Create work directory."
-    mkdir -p "${__workdir}"
-    chown -Rf "${__user_name}:${__group_name}" "${__workdir}"
-    chmod -Rf 775 "${__workdir}"
-    ls -lahF --time-style=long-iso --color "${__workdir}/.."
+    mkdir -p "$__workdir"
+    chown -Rf "${__user_name}:${__group_name}" "$__workdir"
+    chmod -Rf 775 "$__workdir"
+    ls -lahF --time-style=long-iso --color "$__workdir/.."
   fi
 }
 
