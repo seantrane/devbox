@@ -103,10 +103,21 @@ RUN chsh -s "/bin/bash" \
 SHELL ["/bin/bash", "-c"]
 RUN /opt/devbox/install_sdkman
 
-# Install developer tools and infrastructure-as-code dependencies.
+# Install developer tools.
 SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
-RUN /opt/devbox/install --dev --iac --google-chrome \
-  ; /opt/devbox/debug
+RUN /opt/devbox/install --dev
+
+# Install infrastructure-as-code dependencies.
+SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
+RUN /opt/devbox/install --iac
+
+# Install Chrome.
+SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
+RUN /opt/devbox/install --google-chrome
+
+# Debugging outputs.
+SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
+RUN /opt/devbox/debug
 
 ENV BATS_LIB_PATH=${BATS_LIB_PATH:-/opt/bats/lib}
 
